@@ -167,7 +167,7 @@ impl<T> InsertionSet<T> {
          * This is inspired by WebKit's choice to use bubble sort for their insertion set,
          * except that bubble sort is a terrible algorithm and insertion sort is much better.
          */
-        insertion_sort_by_key(&mut *self.insertions, |insertion| insertion.index);
+        insertion_sort_by_key(&mut self.insertions, |insertion| insertion.index);
     }
 }
 impl<T> FromIterator<Insertion<T>> for InsertionSet<T> {
