@@ -17,10 +17,7 @@ use std::fmt::Debug;
 use std::iter::{ExactSizeIterator, FromIterator};
 use std::ops::Range;
 
-use self::sorting::insertion_sort_by_key;
-
 mod shift;
-mod sorting;
 
 use self::shift::BulkShifter;
 
@@ -144,30 +141,32 @@ impl<T> InsertionSet<T> {
     ///
     /// The average runtime of this function is `O(n + m)`,
     /// where `n` is the number of existing elements and `m` is the number of insertions.
+    /// The worst case running time is `O((k * log(k))` where `k = n + m`.
     pub fn apply(&mut self, target: &mut Vec<T>) {
         self.sort();
         apply_bulk_insertions(target, PoppingIter(&mut self.insertions));
     }
     fn sort(&mut self) {
         /*
-         * Why would we possibly want to use insertion sort here?
-         * First of all,
-         * we need to maintain a stable sort to preserve the original order of the `Insertion`s.
-         * Insertion sort has many other advantages over mergesort and quicksort,
-         * and can be significantly faster in some scenarios.
-         *
+         * In many scenarios, the input is mostly sorted.
+         * In those cases, insertion sort may be better than std::slice::sort.
          * When the array is already mostly sorted, insertion sort has average running time `O(nk)`,
          * where `k` is the average distance of each element from its proper position.
-         * In a randomly sorted array `k == n` giving `O(n^2)` worst case performance,
-         * this isn't true in all scenarios as `k` may be significantly smaller.
-         * We expect the `InsertionSet` to be mostly sorted already,
-         * with only a few slightly out of place elements,
-         * giving a very low average `k` value and very good running time.
          *
-         * This is inspired by WebKit's choice to use bubble sort for their insertion set,
-         * except that bubble sort is a terrible algorithm and insertion sort is much better.
+         * Previous versions of this code used insertion sort for this reason,
+         * because we expected the input to be mostly sorted in the compiler.
+         * However, now that we are a library, we want to support as many use cases as possible.
+         * The documentation guarantees linear behavior,
+         * and we don't want to have quadratic blowup if the user has unexpected input.
+         * See issue #1 for details.
+         *
+         * The big advantage of insertion sort over std::slice::sort is that it avoids allocation.
+         * If the allocation in std::sort becomes a significant performance overhead,
+         * we could try and optimistically perform insertion sort,
+         * falling back to stdlib sort on input that is not already mostly-sorted.
+         * Alternatively, we could try reusing memory or offering the user a choice.
          */
-        insertion_sort_by_key(&mut self.insertions, |insertion| insertion.index);
+        self.insertions.sort_by_key(|insertion| insertion.index);
     }
 }
 impl<T> FromIterator<Insertion<T>> for InsertionSet<T> {
