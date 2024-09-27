@@ -12,6 +12,7 @@
 //!
 //! [DuckLogic]: https://ducklogic.org/
 //! [B3 JIT]: https://webkit.org/blog/5852/introducing-the-b3-jit-compiler/
+#![deny(missing_docs)]
 use std::fmt::Debug;
 use std::iter::{ExactSizeIterator, FromIterator};
 use std::ops::Range;
