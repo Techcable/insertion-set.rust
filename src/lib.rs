@@ -5,7 +5,7 @@
 //!
 //! If you batch multiple values together with an [`InsertionSet`]
 //! you can defer the expensive movement of the vector's
-//! memory till the of the loop.
+//! memory till the end of the loop.
 //!
 //! This code was originally copied from the first prototype compiler for [DuckLogic].
 //! It was inspired by the way the [B3 JIT] handles insertions.
@@ -26,7 +26,7 @@ use self::shift::BulkShifter;
 pub struct Insertion<T> {
     /// Where in the original vector to insert this value.
     ///
-    /// This is equivelant to the index argument in `Vec::insert`
+    /// This is equivalent to the index argument in `Vec::insert`
     pub index: usize,
     /// The value to be inserted
     pub element: T,
@@ -47,7 +47,8 @@ impl<T> From<(usize, T)> for Insertion<T> {
 
 /// A set of pending insertions on a Vec
 ///
-/// When multiple insertions at a
+/// When multiple insertions are queued at the same index,
+/// they are applied in the order they were queued.
 ///
 /// See module documentation for an overview.
 pub struct InsertionSet<T> {
@@ -139,9 +140,10 @@ impl<T> InsertionSet<T> {
     /// This reuses the Vector's existing memory if possible,
     /// but may require a reallocation (due to new values)
     ///
-    /// The average runtime of this function is `O(n + m)`,
+    /// When the insertions are already nearly sorted by index,
+    /// the runtime of this function is `O(n + m)`,
     /// where `n` is the number of existing elements and `m` is the number of insertions.
-    /// The worst case running time is `O((k * log(k))` where `k = n + m`.
+    /// The worst case running time is `O(k * log(k))` where `k = n + m`.
     pub fn apply(&mut self, target: &mut Vec<T>) {
         self.sort();
         apply_bulk_insertions(target, PoppingIter(&mut self.insertions));
@@ -221,12 +223,12 @@ where
      * We perform insertions in reverse order to reduce moving memory,
      * and ensure that the function is panic safe.
      *
-     * For example, given the vector
-     * and the InsertionSet `[(0, 0), (1, 2), (1, 3) (4, 9)]`:
+     * For example, given the vector `[1, 4, 5, 7, 11]`
+     * and the InsertionSet `[(0, 0), (1, 2), (1, 3), (4, 9)]`:
      *
      * Since the first (working backwards) insertion is `(4, 9)`,
-     * we need to to shift all elements after our first insertion
-     * to the left 4 places:
+     * we need to shift all elements after our first insertion
+     * to the right 4 places:
      * `[1, 4, 5, 7, undef, undef, undef, undef, 11]`.
      * The element `11` will never need to be moved again,
      * since we've already made room for all future insertions.
@@ -234,14 +236,14 @@ where
      * Next, we perform our first insertion (4, 9) at the last `undef` element:
      * `[1, 4, 5, 7, undef, undef, undef, 9, 11]`.
      * We only have 3 insertions left to perform,
-     * so all future shifts will only need to move over two.
-     * Then, we handle the group of insertions `[(1, 2), [(1, 3)]`,
-     * and shift all elements past index 1 to the left 3 spaces:
+     * so all future shifts will only need to move over three.
+     * Then, we handle the group of insertions `[(1, 2), (1, 3)]`,
+     * and shift all elements past index 1 to the right 3 spaces:
      * [1, undef, undef, undef, 4, 5, 7, 9, 11].
      * Then we perform our desired insertions at index 1:
-     * [1, undef, 2, 3, 4, 9, 11].
+     * [1, undef, 2, 3, 4, 5, 7, 9, 11].
      * Finally, we perform the same process for the final insertion (0, 0),
-     * resulting in the desired result: [0, 1, 2, 3, 4, 9, 11].
+     * resulting in the desired result: [0, 1, 2, 3, 4, 5, 7, 9, 11].
      */
     while !shifter.is_finished() {
         let Insertion { index, element } = insertions.next().expect("Expected more insertions!");
@@ -326,7 +328,7 @@ mod test {
     fn basic() {
         /*
          * For example, given the vector `[1, 4, 5, 7, 11]`
-         * and the InsertionSet `[(0, 0), (1, 2), (1, 3) (4, 9)]`:
+         * and the InsertionSet `[(0, 0), (1, 2), (1, 3), (4, 9)]`:
          */
         let vector = vec![1, 4, 5, 7, 11];
         let insertions = [(0, 0), (1, 2), (1, 3), (4, 9)]
@@ -339,7 +341,7 @@ mod test {
     fn updated_locations() {
         /*
          * For example, given the vector `[1, 4, 5, 7, 11]`
-         * and the InsertionSet `[(0, 0), (1, 2), (1, 3) (4, 9)]`:
+         * and the InsertionSet `[(0, 0), (1, 2), (1, 3), (4, 9)]`:
          */
         let vector = vec![1, 4, 5, 7, 11];
         let mut insertions = [(0, 0), (1, 2), (1, 3), (4, 9)]

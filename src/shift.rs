@@ -4,34 +4,37 @@ use std::{ptr, slice};
 /// A completely safe interface for shifting a vector's elements in bulk.
 ///
 /// This allows bulk insertions, deletions, and shifting to be done safely in-place.
-/// First, we require that the additional space be .
-/// We reserve enough memory for all the  insertions and operations in advanced,
-/// guaranteeing that all memory `target.len() + desired_insert`,
-/// and that the range (
+/// We reserve enough memory for all the desired insertions in advance,
+/// guaranteeing the target has room for `target.len() + desired_insertions` elements,
+/// and that the shifted range never needs to grow once work has begun.
 ///
-/// While work is in progress, we no only consider the normal range of initialized memory `[0, target.len())`,
-/// but also consider our own range of initialized memory `[shifted_start, shifted_end]`.
+/// While work is in progress, we not only consider the normal range of initialized memory `[0, target.len())`,
+/// but also consider our own range of initialized memory `[shifted_start, shifted_end)`.
 /// This leaves the middle range `[target.len(), shifted_start)` completely uninitialized memory,
 /// and gives us room to perform our own insertions.
-/// We're completely finished as soon as soon as `target.len() == shifted_start`,
+/// We're completely finished as soon as `target.len() == shifted_start`,
 /// and there's no longer uninitialized memory in the middle.
 ///
 /// ## Example
 /// 1. Assume we're given a 5-element vector of `[1, 4, 5, 7, 11]`,
-///    and want to insert the value `1` at index `4`.
-///   1. Since we haven't created a [`BulkShift`] object yet,
-///      all the elements occupy the normal (original) range of `(0, 5)`
-/// 2. First, we create a new [`BulkShift`] object with `desired_insertions = 1`,
-///    which will reserve space for 1 additional element, giving the memory `[1, 4, 5, 7, 11, undef]`
-///   1. Original range: `[0, 5)` has 5 defined elements.
-///   2. Middle range: `[5, 6)` has 1 _undefined_ element.
-///   3. Shifted (final) range: `[6, 6)` has 0 _defined_ elements.
-/// 2. Move the element `11` from the original (left) side to the shifted (right) side
-///     giving the memory `[1, 4, 5, 7, undef, 11]`.
-///  1. Original range: `[0, 5)` has 4 defined  elements (instead of 5).
-///  2. Middle range: `[5, 6)` has 1 undefined element (but changed position)
-///  2. Shifted range: `(5, 6)` has 1 defined element (instead of 0).
-/// 3. Insert the
+///    and want to insert the value `9` at index `4`.
+///    1. Since we haven't created a [`BulkShifter`] object yet,
+///       all the elements occupy the normal (original) range of `[0, 5)`.
+/// 2. First, we create a new [`BulkShifter`] object with `desired_insertions = 1`,
+///    which will reserve space for 1 additional element, giving the memory `[1, 4, 5, 7, 11, undef]`.
+///    1. Original range: `[0, 5)` has 5 defined elements.
+///    2. Middle range: `[5, 6)` has 1 _undefined_ element.
+///    3. Shifted (final) range: `[6, 6)` has 0 _defined_ elements.
+/// 3. Move the element `11` from the original (left) side to the shifted (right) side,
+///    giving the memory `[1, 4, 5, 7, undef, 11]`.
+///    1. Original range: `[0, 4)` has 4 defined elements (instead of 5).
+///    2. Middle range: `[4, 5)` has 1 undefined element (but changed position).
+///    3. Shifted range: `[5, 6)` has 1 defined element (instead of 0).
+/// 4. Finally, we insert the value `9` into the last remaining middle slot,
+///    giving the memory `[1, 4, 5, 7, 9, 11]`.
+///    1. Original range: `[0, 4)` has 4 defined elements.
+///    2. Middle range: `[4, 4)` is empty, so the shift is complete.
+///    3. Shifted range: `[4, 6)` has 2 defined elements.
 pub struct BulkShifter<'a, T: 'a> {
     /// The target vector we're working with
     target: &'a mut Vec<T>,
@@ -60,8 +63,8 @@ impl<'a, T: 'a> BulkShifter<'a, T> {
             shifted_start: shifted_end,
         }
     }
-    /// Determines if there is remaining elements in the middle,
-    /// and we're finished.
+    /// Determines if there is no uninitialized memory remaining in the middle,
+    /// meaning we're finished.
     #[inline]
     pub fn is_finished(&self) -> bool {
         self.shifted_start == self.target.len()
@@ -70,7 +73,7 @@ impl<'a, T: 'a> BulkShifter<'a, T> {
     /// Shifts all the values after the specified original `start`
     /// from the original values over to the shifted values.
     ///
-    /// Returns an [`InsufficientRoomError`] if there's not enough space to continue,
+    /// Panics if there's not enough space to continue,
     /// since all these operations are done in place.
     #[inline]
     pub fn shift_original(&mut self, start: usize) {
